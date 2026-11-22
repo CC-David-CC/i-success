@@ -263,17 +263,25 @@ fn home(ui: &mut Ui, catalog: &Catalog, subject: &mut String, open_bands: &mut B
         return None;
     };
 
-    ui.horizontal(|ui| {
-        ui.label(RichText::new(format!("{} by level", chosen.name)).size(24.0).color(TEXT));
-        ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-            if ui.button("Collapse all").clicked() {
-                open_bands.clear();
-            }
-            if ui.button("Expand all").clicked() {
-                open_bands.extend(catalog.bands.iter().map(|b| b.id.clone()));
-            }
+    let compact = ui.available_width() < 600.0;
+    let heading = RichText::new(format!("{} by level", chosen.name)).size(24.0).color(TEXT);
+    let mut controls = |ui: &mut Ui| {
+        if ui.button("Collapse all").clicked() {
+            open_bands.clear();
+        }
+        if ui.button("Expand all").clicked() {
+            open_bands.extend(catalog.bands.iter().map(|b| b.id.clone()));
+        }
+    };
+    if compact {
+        ui.label(heading);
+        ui.horizontal(&mut controls);
+    } else {
+        ui.horizontal(|ui| {
+            ui.label(heading);
+            ui.with_layout(Layout::right_to_left(Align::Center), &mut controls);
         });
-    });
+    }
     ui.add_space(8.0);
 
     for band in &catalog.bands {
@@ -284,7 +292,8 @@ fn home(ui: &mut Ui, catalog: &Catalog, subject: &mut String, open_bands: &mut B
         } else {
             format!("{} grade{}", grades.len(), if grades.len() == 1 { "" } else { "s" })
         };
-        let title = RichText::new(format!("{}   \u{00b7}   {}   \u{00b7}   {}", band.name, band.range, count)).size(19.0).color(TEXT);
+        let label = if compact { format!("{} · {}", band.name, count) } else { format!("{}   ·   {}   ·   {}", band.name, band.range, count) };
+        let title = RichText::new(label).size(19.0).color(TEXT);
         let response = CollapsingHeader::new(title).id_salt(("band", band.id.as_str())).open(Some(open)).show(ui, |ui| {
             ui.add_space(6.0);
             if grades.is_empty() {
@@ -347,7 +356,8 @@ fn grade_card_body(ui: &mut Ui, catalog: &Catalog, subject: &Subject, grade: &Gr
         ui.add_space(4.0);
         ui.horizontal(|ui| {
             ui.label(RichText::new(&subject.name).color(TEXT));
-            ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+            let alignment = if ui.available_width() < 170.0 { Layout::left_to_right(Align::Center) } else { Layout::right_to_left(Align::Center) };
+            ui.with_layout(alignment, |ui| {
                 let count = catalog.skills_for(&subject.id, &grade.id).count();
                 if count == 0 {
                     ui.label(RichText::new("No skills yet").color(MUTED));
@@ -450,7 +460,7 @@ fn problem_body(ui: &mut Ui, skill: &Skill, practice: &mut Practice) {
     let verdicts: Option<Vec<Verdict>> = practice.verdicts().map(<[Verdict]>::to_vec);
     let mut typed = false;
     for (i, (spec, input)) in problem.answers.iter().zip(practice.inputs.iter_mut()).enumerate() {
-        ui.horizontal(|ui| {
+        ui.horizontal_wrapped(|ui| {
             ui.label(RichText::new(format!("{}:", spec.label)).size(18.0).color(TEXT));
             if let Some(prefix) = &spec.prefix {
                 ui.label(RichText::new(prefix).size(18.0));
@@ -489,7 +499,7 @@ fn problem_body(ui: &mut Ui, skill: &Skill, practice: &mut Practice) {
     }
 
     ui.add_space(10.0);
-    ui.horizontal(|ui| {
+    ui.horizontal_wrapped(|ui| {
         let check = Button::new(RichText::new("Check").size(17.0).strong().color(ON_PRIMARY)).fill(PRIMARY).min_size(vec2(110.0, 36.0));
         let enter = ui.input(|i| i.key_pressed(egui::Key::Enter));
         if ui.add(check).clicked() || enter {
