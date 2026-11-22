@@ -18,6 +18,8 @@ Last reviewed: 2026-11-13.
 |---|---|---|
 | `apps/i-success-web/practice.png` | Screenshot of the browser practice window using the supplied curriculum and a synthetic answer | MIT OR Apache-2.0 |
 
+The WebGL build uses the fonts provided by egui. Its generated THIRD-PARTY-NOTICES.txt includes the dependency and embedded font notices from the selected Cargo packages.
+
 ## Third-party code
 
 The `SKILLS/study-wb` proof of concept bundles five JavaScript libraries:
