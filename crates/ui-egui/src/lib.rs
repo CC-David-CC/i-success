@@ -19,9 +19,12 @@ use std::collections::BTreeSet;
 use theme::*;
 
 /// The orangutan, 256 x 256: the window icon and the mark on the brand bar.
+#[cfg(not(target_arch = "wasm32"))]
 pub const ORANGUTAN_PNG: &[u8] = include_bytes!("../../../assets/brand/orangutan-256.png");
 /// "I-SUCCESS" on a white tile, 430 x 96.
+#[cfg(not(target_arch = "wasm32"))]
 pub const WORDMARK_PNG: &[u8] = include_bytes!("../../../assets/brand/wordmark.png");
+#[cfg(not(target_arch = "wasm32"))]
 const WORDMARK_ASPECT: f32 = 430.0 / 96.0;
 
 /// The bands open when the app starts.
@@ -31,13 +34,24 @@ const MAX_COLUMNS: usize = 3;
 const CARD_MIN_WIDTH: f32 = 300.0;
 
 /// Which screen is showing.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+#[serde(tag = "view", content = "selection")]
 pub enum Screen {
     Home,
     /// The skills of one grade, by grade id.
     Grade(String),
     /// Practising one skill.
     Practice(Practice),
+}
+
+/// An editable practice document contains no identity or browser session data.
+#[derive(serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+struct PracticeDocument {
+    format: String,
+    subject: String,
+    bands: BTreeSet<String>,
+    screen: Screen,
 }
 
 /// A move between screens, decided while drawing and applied after it.
@@ -67,6 +81,46 @@ impl App {
     pub fn with_catalog(catalog: Result<Catalog, String>) -> Self {
         let subject = catalog.as_ref().ok().and_then(|c| c.subjects.iter().find(|s| s.ready)).map(|s| s.id.clone()).unwrap_or_default();
         Self { catalog, subject, open_bands: OPEN_AT_START.iter().map(|s| (*s).to_owned()).collect(), screen: Screen::Home, styled: false }
+    }
+
+    /// Save curriculum navigation, typed answers, hints and score.
+    pub fn document(&self) -> Result<String, String> {
+        let doc = PracticeDocument {
+            format: "i-success/1".into(),
+            subject: self.subject.clone(),
+            bands: self.open_bands.clone(),
+            screen: self.screen.clone(),
+        };
+        toml::to_string(&doc).map_err(|e| e.to_string())
+    }
+
+    /// Only install a complete supported session that references the current catalog.
+    pub fn load_document(&mut self, content: &str) -> Result<(), String> {
+        if content.len() > 128 * 1024 {
+            return Err("Practice file exceeds 128 KiB.".into());
+        }
+        let doc: PracticeDocument = toml::from_str(content).map_err(|e| e.message().to_owned())?;
+        let catalog = self.catalog.as_ref().map_err(Clone::clone)?;
+        if doc.format != "i-success/1"
+            || !catalog.subject(&doc.subject).is_some_and(|s| s.ready)
+            || doc.bands.iter().any(|id| !catalog.bands.iter().any(|b| &b.id == id))
+        {
+            return Err("Unsupported practice file or unknown curriculum.".into());
+        }
+        let valid = match &doc.screen {
+            Screen::Home => true,
+            Screen::Grade(id) => catalog.grade(id).is_some(),
+            Screen::Practice(session) => {
+                catalog.skill(session.skill_id()).is_some_and(|skill| skill.subject == doc.subject && session.matches_skill(skill))
+            }
+        };
+        if !valid {
+            return Err("Practice file refers to an unavailable problem.".into());
+        }
+        self.subject = doc.subject;
+        self.open_bands = doc.bands;
+        self.screen = doc.screen;
+        Ok(())
     }
 
     pub fn screen(&self) -> &Screen {
@@ -108,19 +162,24 @@ impl App {
             ui,
             |ui| {
                 ui.horizontal(|ui| {
-                    ui.add(
-                        egui::Image::from_bytes("bytes://i-success/orangutan.png", ORANGUTAN_PNG)
-                            .fit_to_exact_size(vec2(44.0, 44.0))
-                            .corner_radius(8.0)
-                            .alt_text("Orangutan"),
-                    );
-                    ui.add_space(6.0);
-                    let wordmark = ui.add(
-                        egui::Image::from_bytes("bytes://i-success/wordmark.png", WORDMARK_PNG)
-                            .fit_to_exact_size(vec2(36.0 * WORDMARK_ASPECT, 36.0))
-                            .sense(Sense::click())
-                            .alt_text("I-SUCCESS"),
-                    );
+                    #[cfg(not(target_arch = "wasm32"))]
+                    let wordmark = {
+                        ui.add(
+                            egui::Image::from_bytes("bytes://i-success/orangutan.png", ORANGUTAN_PNG)
+                                .fit_to_exact_size(vec2(44.0, 44.0))
+                                .corner_radius(8.0)
+                                .alt_text("Orangutan"),
+                        );
+                        ui.add_space(6.0);
+                        ui.add(
+                            egui::Image::from_bytes("bytes://i-success/wordmark.png", WORDMARK_PNG)
+                                .fit_to_exact_size(vec2(36.0 * WORDMARK_ASPECT, 36.0))
+                                .sense(Sense::click())
+                                .alt_text("I-SUCCESS"),
+                        )
+                    };
+                    #[cfg(target_arch = "wasm32")]
+                    let wordmark = ui.link(RichText::new("I-SUCCESS").size(24.0).strong().color(TEXT));
                     wordmark.widget_info(|| WidgetInfo::labeled(Role::Link, true, "I-SUCCESS home"));
                     if wordmark.clicked() {
                         nav = Some(Nav::Home);
@@ -132,7 +191,7 @@ impl App {
         let Self { catalog, subject, open_bands, screen, .. } = self;
         egui::CentralPanel::default().frame(Frame::new().fill(PAGE).inner_margin(Margin::symmetric(24, 18))).show(ui, |ui| {
             ScrollArea::vertical().auto_shrink([false, false]).show(ui, |ui| {
-                ui.set_max_width(1180.0);
+                ui.set_max_width(ui.available_width().min(1180.0));
                 let catalog = match catalog {
                     Ok(catalog) => catalog,
                     Err(reason) => {
@@ -399,6 +458,7 @@ fn problem_body(ui: &mut Ui, skill: &Skill, practice: &mut Practice) {
             let edge = Frame::new().fill(CARD).stroke(Stroke::new(1.5, BOX_EDGE)).corner_radius(4.0).inner_margin(Margin::symmetric(8, 4));
             let box_ = ui.add(
                 TextEdit::singleline(input)
+                    .char_limit(4096)
                     .id_salt(("answer", skill.id.as_str(), i))
                     .desired_width(140.0)
                     .font(FontId::proportional(22.0))
@@ -455,4 +515,32 @@ fn back(ui: &mut Ui, to: &str) -> bool {
     link.widget_info(|| WidgetInfo::labeled(Role::Link, true, format!("Back to {to}")));
     ui.add_space(6.0);
     link.clicked()
+}
+
+#[cfg(test)]
+mod practice_files {
+    use super::{App, Screen};
+    use i_success_engine::Practice;
+
+    #[test]
+    fn restores_checked_answers_and_preserves_the_current_session_on_error() -> Result<(), String> {
+        let catalog = i_success_content::builtin().map_err(|e| e.to_string())?;
+        let skill = catalog.skills.first().ok_or("missing practice skill")?;
+        let mut practice = Practice::new(skill);
+        let problem = practice.problem(skill).ok_or("missing problem")?;
+        practice.inputs = problem.answers.iter().map(|a| a.answer.clone()).collect();
+        practice.check(skill);
+        assert!(practice.solved());
+        let mut app = App::new();
+        app.set_screen(Screen::Practice(practice));
+        let saved = app.document()?;
+        let mut restored = App::new();
+        restored.load_document(&saved)?;
+        assert_eq!(app.screen(), restored.screen());
+        let damaged = saved.replace("index = 0", "index = 999999");
+        assert_ne!(damaged, saved);
+        assert!(restored.load_document(&damaged).is_err());
+        assert_eq!(restored.document()?, saved);
+        Ok(())
+    }
 }

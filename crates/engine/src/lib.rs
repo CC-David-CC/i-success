@@ -7,7 +7,7 @@
 use i_success_model::{AnswerSpec, Problem, Skill};
 
 /// The result of checking one answer box.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum Verdict {
     /// Nothing was typed.
     Empty,
@@ -45,7 +45,8 @@ pub fn check(spec: &AnswerSpec, typed: &str) -> Verdict {
 }
 
 /// A learner working through one skill.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct Practice {
     skill: String,
     index: usize,
@@ -81,6 +82,19 @@ impl Practice {
 
     pub fn skill_id(&self) -> &str {
         &self.skill
+    }
+
+    /// Check that a saved session can belong to this skill before installing it.
+    pub fn matches_skill(&self, skill: &Skill) -> bool {
+        self.skill == skill.id
+            && self.correct <= self.attempted
+            && self.problem(skill).is_some_and(|problem| {
+                self.inputs.len() == problem.answers.len()
+                    && self.inputs.iter().all(|answer| answer.chars().count() <= 4096)
+                    && self.verdicts.as_ref().is_none_or(|values| values.len() == problem.answers.len())
+                    && self.steps_shown <= problem.steps.len()
+                    && self.attempted <= 100_000_000
+            })
     }
 
     /// The problem on screen, or `None` for a skill with no problems.

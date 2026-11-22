@@ -12,6 +12,7 @@ publish.workspace = true
 workspace = true
 
 [dependencies]
+serde.workspace = true
 i-success-model = { workspace = true }
 
 [dev-dependencies]
