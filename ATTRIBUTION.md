@@ -12,6 +12,12 @@ Last reviewed: 2026-11-13.
 | `assets/brand/i-success-banner.png` | README banner | Supplied by the owner on 2026-11-13 | Origin and licence not confirmed; verify before distribution |
 | `assets/brand/wordmark.png` | "I-SUCCESS" on a white rounded tile, 430 x 96: "I-" in `#00aeef`, "SUCCESS" in `#ffca05` | Drawn with Pillow on 2026-11-13. The text is set in Inter Bold (SIL OFL 1.1, Copyright 2016 The Inter Project Authors); only rendered glyphs are in the picture, no font file is shipped | The project's own work |
 
+## Browser documentation
+
+| File | Origin | Licence |
+|---|---|---|
+| `apps/i-success-web/practice.png` | Screenshot of the browser practice window using the supplied curriculum and a synthetic answer | MIT OR Apache-2.0 |
+
 ## Third-party code
 
 The `SKILLS/study-wb` proof of concept bundles five JavaScript libraries:
